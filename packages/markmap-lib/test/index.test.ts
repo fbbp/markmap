@@ -51,6 +51,19 @@ markmap:
   expect(result).toMatchSnapshot();
 });
 
+test('frontmatter with layout', () => {
+  const transformer = new Transformer();
+  const result = transformer.transform(`\
+---
+markmap:
+  layout: radial
+---
+
+- item
+`);
+  expect(result.frontmatter?.markmap?.layout).toBe('radial');
+});
+
 test('content with line endings of CRLF', () => {
   const transformer = new Transformer();
   const result = transformer.transform(

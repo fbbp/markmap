@@ -6,6 +6,9 @@
 
 View markmaps in browser.
 
+The `layout` option can be used to change how nodes are arranged. Supported
+values are `default`, `left-right`, and `radial`.
+
 This package is separated from [markmap-lib](https://github.com/markmap/markmap/tree/master/packages/markmap-lib) to decrease the size of `node_modules` because you don't need this in `node_modules` most of the time.
 
 👉 [Read the documentation](https://markmap.js.org/docs) for more detail.

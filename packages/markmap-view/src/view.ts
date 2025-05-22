@@ -1,6 +1,7 @@
 import type * as d3 from 'd3';
 import {
   linkHorizontal,
+  linkRadial,
   max,
   min,
   minIndex,
@@ -36,7 +37,13 @@ const SELECTOR_NODE = 'g.markmap-node';
 const SELECTOR_LINK = 'path.markmap-link';
 const SELECTOR_HIGHLIGHT = 'g.markmap-highlight';
 
-const linkShape = linkHorizontal();
+function createLinkShape(layout: string) {
+  return layout === 'radial'
+    ? linkRadial<any, any>()
+        .angle((d: [number, number]) => d[0])
+        .radius((d: [number, number]) => d[1])
+    : linkHorizontal<any, any>();
+}
 
 function minBy(numbers: number[], by: (v: number) => number): number {
   const index = minIndex(numbers, by);
@@ -64,6 +71,8 @@ export class Markmap {
   g: d3.Selection<SVGGElement, INode, HTMLElement, INode>;
 
   zoom: d3.ZoomBehavior<SVGElement, INode>;
+
+  linkShape = createLinkShape(defaultOptions.layout);
 
   private _observer: ResizeObserver;
 
@@ -226,8 +235,24 @@ export class Markmap {
         d.state.size = newSize;
       });
 
-    const { lineWidth, paddingX, spacingHorizontal, spacingVertical } =
+    const { lineWidth, paddingX, spacingHorizontal, spacingVertical, layout: layoutType } =
       this.options;
+
+    if (layoutType === 'left-right') {
+      const root = this.state.data;
+      const children = root?.children || [];
+      const mid = Math.ceil(children.length / 2);
+      children.forEach((child, i) => {
+        (child as any)._dir = i < mid ? -1 : 1;
+        const setDir = (node: INode) => {
+          node.children?.forEach((ch) => {
+            (ch as any)._dir = (node as any)._dir;
+            setDir(ch);
+          });
+        };
+        setDir(child);
+      });
+    }
     const layout = flextree<INode>({})
       .children((d) => {
         if (!d.payload?.fold) return d.children;
@@ -245,28 +270,38 @@ export class Markmap {
     const tree = layout.hierarchy(this.state.data);
     layout(tree);
     const fnodes = tree.descendants();
+    const minX = min(fnodes, (f) => f.x - f.xSize / 2) || 0;
+    const maxX = max(fnodes, (f) => f.x + f.xSize / 2) || 1;
     fnodes.forEach((fnode) => {
-      const node = fnode.data;
-      node.state.rect = {
-        x: fnode.y,
-        y: fnode.x - fnode.xSize / 2,
-        width: fnode.ySize - spacingHorizontal,
-        height: fnode.xSize,
-      };
+      const node = fnode.data as any;
+      const width = fnode.ySize - spacingHorizontal;
+      const height = fnode.xSize;
+      if (layoutType === 'radial') {
+        const angle = ((fnode.x - minX) / (maxX - minX)) * Math.PI * 2;
+        const r = fnode.y;
+        const cx = Math.cos(angle) * r;
+        const cy = Math.sin(angle) * r;
+        node.state.rect = {
+          x: cx - width / 2,
+          y: cy - height / 2,
+          width,
+          height,
+        };
+      } else {
+        let x = fnode.y;
+        let y = fnode.x - fnode.xSize / 2;
+        if (layoutType === 'left-right') {
+          const dir = node._dir || 1;
+          x = dir * fnode.y - (dir === -1 ? width : 0);
+        }
+        node.state.rect = { x, y, width, height };
+      }
     });
     this.state.rect = {
-      x1: min(fnodes, (fnode) => fnode.data.state.rect.x) || 0,
-      y1: min(fnodes, (fnode) => fnode.data.state.rect.y) || 0,
-      x2:
-        max(
-          fnodes,
-          (fnode) => fnode.data.state.rect.x + fnode.data.state.rect.width,
-        ) || 0,
-      y2:
-        max(
-          fnodes,
-          (fnode) => fnode.data.state.rect.y + fnode.data.state.rect.height,
-        ) || 0,
+      x1: min(fnodes, (f) => f.data.state.rect.x) || 0,
+      y1: min(fnodes, (f) => f.data.state.rect.y) || 0,
+      x2: max(fnodes, (f) => f.data.state.rect.x + f.data.state.rect.width) || 0,
+      y2: max(fnodes, (f) => f.data.state.rect.y + f.data.state.rect.height) || 0,
     };
   }
 
@@ -275,6 +310,7 @@ export class Markmap {
       ...this.options,
       ...opts,
     };
+    this.linkShape = createLinkShape(this.options.layout);
     if (this.options.zoom) {
       this.svg.call(this.zoom);
     } else {
@@ -490,11 +526,18 @@ export class Markmap {
       .attr('data-path', (d) => d.target.state.path)
       .attr('d', (d) => {
         const originRect = getOriginSourceRect(d.target);
-        const pathOrigin: [number, number] = [
-          originRect.x + originRect.width,
-          originRect.y + originRect.height,
-        ];
-        return linkShape({ source: pathOrigin, target: pathOrigin });
+        let pathOrigin: [number, number];
+        if (this.options.layout === 'radial') {
+          const cx = originRect.x + originRect.width / 2;
+          const cy = originRect.y + originRect.height / 2;
+          pathOrigin = [Math.atan2(cy, cx), Math.hypot(cx, cy)];
+        } else {
+          pathOrigin = [
+            originRect.x + originRect.width,
+            originRect.y + originRect.height,
+          ];
+        }
+        return this.linkShape({ source: pathOrigin, target: pathOrigin });
       })
       .attr('stroke-width', 0);
     const mmPathMerge = mmPathEnter.merge(mmPath);
@@ -572,11 +615,18 @@ export class Markmap {
     this.transition(mmPathExit)
       .attr('d', (d) => {
         const targetRect = getOriginTargetRect(d.target);
-        const pathTarget: [number, number] = [
-          targetRect.x + targetRect.width,
-          targetRect.y + targetRect.height + lineWidth(d.target) / 2,
-        ];
-        return linkShape({ source: pathTarget, target: pathTarget });
+        let pathTarget: [number, number];
+        if (this.options.layout === 'radial') {
+          const cx = targetRect.x + targetRect.width / 2;
+          const cy = targetRect.y + targetRect.height / 2;
+          pathTarget = [Math.atan2(cy, cx), Math.hypot(cx, cy)];
+        } else {
+          pathTarget = [
+            targetRect.x + targetRect.width,
+            targetRect.y + targetRect.height + lineWidth(d.target) / 2,
+          ];
+        }
+        return this.linkShape({ source: pathTarget, target: pathTarget });
       })
       .attr('stroke-width', 0)
       .remove();
@@ -587,19 +637,34 @@ export class Markmap {
       .attr('d', (d) => {
         const origSource = d.source;
         const origTarget = d.target;
-        const source: [number, number] = [
-          origSource.state.rect.x + origSource.state.rect.width,
-          origSource.state.rect.y +
-            origSource.state.rect.height +
-            lineWidth(origSource) / 2,
-        ];
-        const target: [number, number] = [
-          origTarget.state.rect.x,
-          origTarget.state.rect.y +
-            origTarget.state.rect.height +
-            lineWidth(origTarget) / 2,
-        ];
-        return linkShape({ source, target });
+        let source: [number, number];
+        let target: [number, number];
+        if (this.options.layout === 'radial') {
+          const rs = origSource.state.rect;
+          const rt = origTarget.state.rect;
+          source = [
+            Math.atan2(rs.y + rs.height / 2, rs.x + rs.width / 2),
+            Math.hypot(rs.x + rs.width / 2, rs.y + rs.height / 2),
+          ];
+          target = [
+            Math.atan2(rt.y + rt.height / 2, rt.x + rt.width / 2),
+            Math.hypot(rt.x + rt.width / 2, rt.y + rt.height / 2),
+          ];
+        } else {
+          source = [
+            origSource.state.rect.x + origSource.state.rect.width,
+            origSource.state.rect.y +
+              origSource.state.rect.height +
+              lineWidth(origSource) / 2,
+          ];
+          target = [
+            origTarget.state.rect.x,
+            origTarget.state.rect.y +
+              origTarget.state.rect.height +
+              lineWidth(origTarget) / 2,
+          ];
+        }
+        return this.linkShape({ source, target });
       });
 
     if (autoFit) this.fit();

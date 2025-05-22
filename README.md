@@ -21,4 +21,7 @@ Markmap is also available in:
 
 ## Usage
 
+Markmap supports multiple layouts which can be selected via the `layout` option.
+Available layouts are `default`, `left-right`, and `radial`.
+
 👉 [Read the documentation](https://markmap.js.org/docs) for more detail.

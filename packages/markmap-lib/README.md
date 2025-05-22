@@ -6,6 +6,9 @@
 
 Visualize your Markdown as mindmaps.
 
+`markmap-lib` also accepts a `layout` option to control how the mindmap is
+rendered. Choose from `default`, `left-right`, or `radial`.
+
 ## Install
 
 ```sh
