@@ -57,6 +57,12 @@ export function deriveOptions(jsonOptions?: Partial<IMarkmapJSONOptions>) {
     if (value != null) derivedOptions[key] = !!value;
   });
 
+  const stringKeys = ['layout'] as const;
+  stringKeys.forEach((key) => {
+    const value = options[key];
+    if (typeof value === 'string') derivedOptions[key] = value;
+  });
+
   return derivedOptions;
 }
 

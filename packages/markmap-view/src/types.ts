@@ -32,6 +32,7 @@ export interface IMarkmapJSONOptions {
   spacingVertical: number;
   zoom: boolean;
   lineWidth: number | number[];
+  layout: string;
 }
 
 export interface IMarkmapOptions {
@@ -47,6 +48,8 @@ export interface IMarkmapOptions {
   style?: (id: string) => string;
   toggleRecursively: boolean;
   zoom: boolean;
+
+  layout: string;
 
   // Theme options
   color: (node: INode) => string;
